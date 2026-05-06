@@ -95,13 +95,27 @@ http://127.0.0.1:8000/docs
 ```
 
 ### What was the hardest part?
+I'd mention handling the async data fetching effieciently. The HN API rwquires multiple dependent requests, so the 1st implementation gave a very slow response time (53 seconds) due to a large nr of sequential calls.
 
+Also, the 3rd endpoint was challenging because of the the recursion in the comment tree. 
 
 ### What part of the system could be improved?
+- concurrency is unbounded
+- no caching
+- no retry/handling failed requests
+- text processing can be improved by filtering words for more meaningful results (remove words such as is, been, my etc)
+- enpoint 3 can be more efficient
 
 
-### Scaling it handle 1K calls/sec? And 1M?
+### Scaling it handle 1K calls/sec?
+- add concurrency control using other mechanisms such as 'asyncio.Semaphore'
+- add rate limiting anf request throttlimg
+- cache aggregated results instead of recalculating on every request
+### and 1 M?
+- add background workers (celery, Kafka)
 
 ### How I would automate the testing?
+I would use pytest, pytest-asyncio. I would test html cleaning, tokenization, word aggregation, integration tests for 3 endpoints, adge cases for deleted comments, empty responses, dead comments, recursive traversal testing for nested comments.
 
 ### How would I implement a continuous development system (pipelines) for this particular case?
+I would build a CI/CD pipeline using github actions. This would run automatically on every push and pull request (would install dependencies, run automated tests, build the application or docker img, deploy automatically to staging/production.)
