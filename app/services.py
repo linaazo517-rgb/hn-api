@@ -1,5 +1,7 @@
 import asyncio
+import re
 from bs4 import BeautifulSoup
+from collections import Counter
 from httpx import AsyncClient
 from typing import Any
 
@@ -8,6 +10,7 @@ async def get_top_story_ids(client: AsyncClient) -> list[int]:
     """
     Get all top story ids from Hacker News.
     """
+
     response = await client.get('/topstories.json')
     response.raise_for_status()
     return response.json()
@@ -17,6 +20,7 @@ async def get_item(client: AsyncClient, item_id: int) -> dict[str, Any]:
     """
     Get a single HN item.
     """
+
     response = await client.get(f'/item/{item_id}.json')
     response.raise_for_status()
     return response.json()
@@ -34,6 +38,7 @@ async def get_top_stories(client: AsyncClient, limit: int=100) -> list[dict[str,
     """
     Get the first 100 top stories
     """
+
     story_ids = await get_top_story_ids(client)
     top_story_ids = story_ids[:limit]
     return await get_items(client, top_story_ids)
@@ -43,6 +48,7 @@ def extract_top_level_comment_ids(stories: list[dict[str, Any]], limit: int=50) 
     """
     Get top-level comment ids from stories.
     """
+
     comment_ids = []
     for story in stories:
         for kid in story.get('kids', []):
@@ -61,11 +67,11 @@ async def get_comments(client: AsyncClient, comment_ids: list[int]) -> list[dict
     for comment in comments:
         if not comment:
             continue
-        if comment.get("type") != "comment":
+        if comment.get('type') != 'comment':
             continue
-        if comment.get("deleted", False):
+        if comment.get('deleted', False):
             continue
-        if comment.get("dead", False):
+        if comment.get('dead', False):
             continue
         filtered_comments.append(comment)
     return filtered_comments
@@ -105,5 +111,37 @@ def clean_html(text: str | None) -> str:
     Clean comments from html tags and decode html entitites.
     """
     if not text:
-        return ""
+        return ''
     return BeautifulSoup(text, 'html.parser').get_text(separator=' ')
+
+
+
+class CommentAnalysisService:
+
+    def tokenize(self, text: str) -> list[str]:
+        text = text.lower()
+        text = re.sub(r'[^a-z0-9\s]', '', text)
+        return [word for word in text.split() if word]
+
+    def get_top_words( self, comments: list[dict[str, Any]], top_n: int = 10 ) -> list[dict[str, Any]]:
+        counter = Counter()
+        for comment in comments: 
+            text = comment.get('text') or ''
+            tokens = self.tokenize(text)
+            counter.update(tokens)
+        return [ {'word': word, 'count': count} for word, count in counter.most_common(top_n) ]
+    
+
+async def get_top_words_from_top_comments(client: AsyncClient) -> list[dict[str, Any]]:
+    """
+    Get top 10 most used words from the first 100 top-level comments of the top 30 stories.
+    """
+
+    stories = await get_top_stories(client=client, limit=30)
+    comment_ids = extract_top_level_comment_ids(stories, limit=150)
+    comments = await get_comments(client=client, comment_ids=comment_ids)
+    comments = comments[:100]
+    analyzer = CommentAnalysisService()
+    return analyzer.get_top_words(comments, top_n=10)
+
+
