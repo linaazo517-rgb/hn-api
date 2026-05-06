@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from httpx import AsyncClient
 
 from .deps import get_client
-from .services import get_first_50_comments, get_top_words_from_top_comments
+from .services import get_first_50_comments, get_top_words_from_top_comments, get_top_words_from_all_comments
 
 router = APIRouter()
 
@@ -14,3 +14,7 @@ async def top_50_comments(client: AsyncClient = Depends(get_client)):
 @router.get('/top-10-words')
 async def top_10_words(client: AsyncClient = Depends(get_client)):
     return await get_top_words_from_top_comments(client)
+
+@router.get('/top-words-all-comments')
+async def top_words_all_comments(client: AsyncClient = Depends(get_client)):
+    return await get_top_words_from_all_comments(client)

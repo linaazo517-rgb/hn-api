@@ -120,13 +120,14 @@ class CommentAnalysisService:
 
     def tokenize(self, text: str) -> list[str]:
         text = text.lower()
-        text = re.sub(r'[^a-z0-9\s]', '', text)
+        text = re.sub(r"http\S+", "", text)
+        text = re.sub(r"[^a-z0-9\s']", "", text)
         return [word for word in text.split() if word]
 
-    def get_top_words( self, comments: list[dict[str, Any]], top_n: int = 10 ) -> list[dict[str, Any]]:
+    def get_top_words(self, comments: list[dict[str, Any]], top_n: int = 10 ) -> list[dict[str, Any]]:
         counter = Counter()
         for comment in comments: 
-            text = comment.get('text') or ''
+            text = clean_html(comment.get('text')) or ''
             tokens = self.tokenize(text)
             counter.update(tokens)
         return [ {'word': word, 'count': count} for word, count in counter.most_common(top_n) ]
@@ -141,6 +142,69 @@ async def get_top_words_from_top_comments(client: AsyncClient) -> list[dict[str,
     comment_ids = extract_top_level_comment_ids(stories, limit=150)
     comments = await get_comments(client=client, comment_ids=comment_ids)
     comments = comments[:100]
+    analyzer = CommentAnalysisService()
+    return analyzer.get_top_words(comments, top_n=10)
+
+
+async def get_all_comments_for_story(client: AsyncClient, story: dict[str, Any]) -> list[dict[str, Any]]:
+    """
+    Fetch all comments) for a single story using BFS.
+    """
+
+    all_comments = []
+    queue = story.get('kids', [])[:]
+
+    while queue:
+        # process in batches
+        batch_ids = queue[:100]
+        queue = queue[100:]
+
+        items = await get_items(client, batch_ids)
+
+        for item in items:
+            if not item:
+                continue
+
+            # collect valid comments
+            if (
+                item.get('type') == 'comment'
+                and not item.get('deleted', False)
+                and not item.get('dead', False)
+            ):
+                all_comments.append(item)
+
+            kids = item.get('kids', [])
+            if kids:
+                queue.extend(kids)
+
+    return all_comments
+
+
+
+async def get_all_comments_from_top_stories(client: AsyncClient, limit: int = 10,) -> list[dict[str, Any]]:
+    """
+    Get ALL comments from top N stories.
+    """
+
+    stories = await get_top_stories(client=client, limit=limit)
+    tasks = [get_all_comments_for_story(client, story) for story in stories if story]
+    results = await asyncio.gather(*tasks)
+
+    all_comments = [
+        comment
+        for story_comments in results
+        for comment in story_comments
+    ]
+    return all_comments
+
+
+
+async def get_top_words_from_all_comments(client: AsyncClient) -> list[dict[str, Any]]:
+    """
+    Get most used words from ALL comments of top 10 stories.
+    """
+
+    comments = await get_all_comments_from_top_stories(client, limit=10)
     analyzer = CommentAnalysisService()
     return analyzer.get_top_words(comments, top_n=10)
 
