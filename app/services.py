@@ -1,6 +1,7 @@
 import asyncio
-from typing import Any
+from bs4 import BeautifulSoup
 from httpx import AsyncClient
+from typing import Any
 
 
 async def get_top_story_ids(client: AsyncClient) -> list[int]:
@@ -80,7 +81,7 @@ def serialize_comment(
     return {
         'id': comment.get('id'),
         'author': comment.get('by'),
-        'text': comment.get('text'),
+        'text': clean_html(comment.get('text')),
         'time': comment.get('time'),
         'parent': comment.get('parent'),
     }
@@ -97,3 +98,12 @@ async def get_first_50_comments(client: AsyncClient) -> list[dict[str, Any]]:
     first_50_comments = comments[:50]
 
     return [serialize_comment(comment) for comment in first_50_comments]
+
+
+def clean_html(text: str | None) -> str:
+    """
+    Clean comments from html tags and decode html entitites.
+    """
+    if not text:
+        return ""
+    return BeautifulSoup(text, 'html.parser').get_text(separator=' ')
