@@ -77,6 +77,42 @@ async def get_comments(client: AsyncClient, comment_ids: list[int]) -> list[dict
     return filtered_comments
 
 
+async def get_first_valid_top_level_comments(
+    client: AsyncClient,
+    story_limit: int,
+    comment_limit: int,
+    batch_size: int = 100,
+) -> list[dict[str, Any]]:
+    """
+    Get the first valid top-level comments from top stories
+    """
+
+    stories = await get_top_stories(
+        client=client,
+        limit=story_limit,
+    )
+
+    comment_ids = []
+
+    for story in stories:
+        comment_ids.extend(story.get("kids", []))
+
+    valid_comments = []
+
+    for i in range(0, len(comment_ids), batch_size):
+
+        batch_ids = comment_ids[i:i + batch_size]
+
+        comments = await get_comments(client, batch_ids)
+
+        valid_comments.extend(comments)
+
+        if len(valid_comments) >= comment_limit:
+            return valid_comments[:comment_limit]
+
+    return valid_comments
+
+
 def serialize_comment(
     comment: dict[str, Any],
 ) -> dict[str, Any]:
@@ -93,7 +129,7 @@ def serialize_comment(
     }
 
 
-async def get_first_50_comments(client: AsyncClient) -> list[dict[str, Any]]:
+'''async def get_first_50_comments(client: AsyncClient) -> list[dict[str, Any]]:
     """
     Get the first 50 top-level comments from the first 100 top stories.
     """
@@ -103,7 +139,24 @@ async def get_first_50_comments(client: AsyncClient) -> list[dict[str, Any]]:
     comments = await get_comments(client=client, comment_ids=comment_ids)
     first_50_comments = comments[:50]
 
-    return [serialize_comment(comment) for comment in first_50_comments]
+    return [serialize_comment(comment) for comment in first_50_comments]'''
+
+async def get_first_50_comments(client: AsyncClient) -> list[dict[str, Any]]:
+    """
+    Get the first 50 valid top-level comments from the first 100 top stories
+    using batched concurrent fetching.
+    """
+
+    comments = await get_first_valid_top_level_comments(
+        client=client,
+        story_limit=100,
+        comment_limit=50,
+    )
+
+    return [
+        serialize_comment(comment)
+        for comment in comments
+    ]
 
 
 def clean_html(text: str | None) -> str:
@@ -138,12 +191,18 @@ async def get_top_words_from_top_comments(client: AsyncClient) -> list[dict[str,
     Get top 10 most used words from the first 100 top-level comments of the top 30 stories.
     """
 
-    stories = await get_top_stories(client=client, limit=30)
-    comment_ids = extract_top_level_comment_ids(stories, limit=150)
-    comments = await get_comments(client=client, comment_ids=comment_ids)
-    comments = comments[:100]
+    comments = await get_first_valid_top_level_comments(
+        client=client,
+        story_limit=30,
+        comment_limit=100,
+    )
+
     analyzer = CommentAnalysisService()
-    return analyzer.get_top_words(comments, top_n=10)
+
+    return analyzer.get_top_words(
+        comments,
+        top_n=10,
+    )
 
 
 async def get_all_comments_for_story(client: AsyncClient, story: dict[str, Any]) -> list[dict[str, Any]]:
